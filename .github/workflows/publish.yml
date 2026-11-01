@@ -1,0 +1,41 @@
+name: Build and publish image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      IMAGE: ghcr.io/mihail44b/subspace
+
+    steps:
+      - name: Download source code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build image
+        run: |
+          docker build \
+            --label org.opencontainers.image.source=https://github.com/mihail44b/subspace \
+            --tag "$IMAGE:$GITHUB_SHA" .
+
+      - name: Check dependencies
+        run: docker run --rm "$IMAGE:$GITHUB_SHA" python -m pip check
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" |
+            docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Publish image
+        run: docker push "$IMAGE:$GITHUB_SHA"

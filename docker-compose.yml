@@ -35,6 +35,8 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
+
+
 volumes:
   postgres_dev_data:
   prometheus_data:
