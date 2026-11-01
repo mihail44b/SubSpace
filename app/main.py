@@ -1,5 +1,6 @@
 import os
 from contextlib import asynccontextmanager
+from prometheus_fastapi_instrumentator import Instrumentator
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -23,6 +24,12 @@ app = FastAPI(
     description="A lightweight, high-performance web panel for tracking subscriptions and regular payments.",
     version="1.0.0",
     lifespan=lifespan
+)
+
+Instrumentator().instrument(app).expose(
+    app,
+    endpoint="/metrics",
+    include_in_schema=False,
 )
 
 # Enable CORS for local development testing
