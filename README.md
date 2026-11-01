@@ -1,35 +1,43 @@
 # SubSpace
 
-Web application for tracking recurring subscriptions and payments.
+Lightweight web application for tracking recurring subscriptions, managing regular payments, and forecasting upcoming expenses.
 
-This checkout contains application source code. Local environment setup,
-containerization, deployment, backups and monitoring will be built step by step.
+🌐 **Live Demo:** [https://subbbspace.duckdns.org](https://subbbspace.duckdns.org)  
+📖 **API Docs:** [https://subbbspace.duckdns.org/docs](https://subbbspace.duckdns.org/docs)
 
-## Application
+---
 
-- Backend: Python, FastAPI, Uvicorn.
-- Database: PostgreSQL, SQLAlchemy async, asyncpg.
-- Frontend: HTML, CSS and JavaScript in `app/static/`.
-- Authentication: JWT and bcrypt.
-- Email verification and payment reminders: SMTP.
+## Features
 
-## Source layout
+- **Subscription Tracking:** Add, edit, and track recurring payments with next billing dates.
+- **Expense Forecasts:** Instant expense estimates for 30, 90, and 365 days ahead.
+- **Authentication:** JWT tokens, bcrypt hashing, and email code verification via SMTP.
+- **Automated Reminders:** Scheduled notifications sent before billing dates.
+- **Observability:** Built-in Prometheus `/metrics` endpoint.
 
-- `app/main.py`: application entry point (`app.main:app`).
-- `app/config.py`: environment-based settings.
-- `app/database.py`: database connections and initial table creation.
-- `app/models.py`, `app/schemas.py`: data models and API schemas.
-- `app/routes.py`, `app/crud.py`: API routes and database operations.
-- `app/auth.py`, `app/email.py`: authentication and email helpers.
-- `app/static/`: frontend assets.
-- `scripts/notify_cron.py`: payment reminder application script.
-- `requirements.txt`: Python dependencies.
+## Tech Stack
 
-## Configuration to prepare
+- **Backend:** FastAPI, Python 3.14, Uvicorn, SQLAlchemy (Async), asyncpg
+- **Database:** PostgreSQL 15
+- **Frontend:** Responsive Vanilla JS, HTML5, CSS (SPA)
+- **Deployment:** Docker Compose, Caddy (Automatic HTTPS), GitHub Actions (CI/CD)
 
-Database connection: `DATABASE_URL`.
-Authentication: `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`.
-Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
+## Quick Start
 
-Runtime settings and credentials are not included. Startup instructions will be
-added after the local setup is verified.
+1. **Clone & prepare config:**
+   ```bash
+   git clone https://github.com/mihail44b/subspace.git
+   cd subspace
+   cp .env.example .env
+   ```
+2. **Fill credentials in `.env`** (`POSTGRES_*`, `JWT_SECRET_KEY`, `SMTP_*`).
+3. **Run with Docker Compose:**
+   ```bash
+   docker compose up -d --build
+   ```
+
+The app will be available at [http://localhost:8000](http://localhost:8000) (interactive docs at `/docs`).
+
+## License
+
+[MIT](LICENSE)
