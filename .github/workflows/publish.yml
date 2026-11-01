@@ -1,4 +1,4 @@
-name: Build and publish image
+name: Build, publish and deploy
 
 on:
   push:
@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
   packages: write
+
+concurrency:
+  group: subspace-production
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -39,3 +43,98 @@ jobs:
 
       - name: Publish image
         run: docker push "$IMAGE:$GITHUB_SHA"
+
+  deploy:
+    needs: publish
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Deploy over SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          : "${VPS_HOST:?Missing VPS_HOST}" "${VPS_PORT:?Missing VPS_PORT}"
+          : "${VPS_USER:?Missing VPS_USER}" "${VPS_SSH_KEY:?Missing VPS_SSH_KEY}"
+          : "${VPS_KNOWN_HOSTS:?Missing VPS_KNOWN_HOSTS}"
+          umask 077
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          ssh -i "$ssh_dir/key" -p "$VPS_PORT" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o ConnectTimeout=15 -o ServerAliveInterval=30 \
+            "$VPS_USER@$VPS_HOST" sh -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -eu
+          revision=$1
+          case "$revision" in ''|*[!0-9a-f]*) exit 1 ;; esac
+          test "${#revision}" -eq 40
+          cd /opt/subspace
+          test -f .env
+          if test -n "$(git status --porcelain --untracked-files=no)"; then
+            echo 'Tracked files on VPS were modified; deployment stopped.' >&2
+            exit 1
+          fi
+          git fetch origin main
+          if test "$revision" != "$(git rev-parse origin/main)"; then
+            echo 'A newer main commit exists; skipping this deployment.'
+            exit 0
+          fi
+          git checkout --detach "$revision"
+          export APP_IMAGE="ghcr.io/mihail44b/subspace:$revision"
+
+          docker compose -f compose.prod.yml config --quiet
+          docker compose -f compose.prod.yml pull
+          docker compose -f compose.prod.yml up -d --wait --wait-timeout 120
+
+          # Check HTTP and a real DB query from the application's environment.
+          docker compose -f compose.prod.yml exec -T web python - <<'PY'
+          import asyncio
+          import time
+          import urllib.request
+          from sqlalchemy import text
+          from app.database import engine
+
+          async def check_database():
+              async with engine.connect() as connection:
+                  assert (await connection.execute(text('SELECT 1'))).scalar() == 1
+
+          async def main():
+              try:
+                  for attempt in range(20):
+                      try:
+                          with urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=5) as response:
+                              assert response.status == 200
+                          await asyncio.wait_for(check_database(), timeout=5)
+                          print('Deployment checks passed: HTTP and database connection.')
+                          return
+                      except Exception:
+                          if attempt == 19:
+                              raise SystemExit('Deployment checks failed; inspect the server. Automatic rollback is not configured.')
+                          await asyncio.sleep(3)
+              finally:
+                  await engine.dispose()
+
+          asyncio.run(main())
+          PY
+
+          # Persist the successful image selection without exposing other .env values.
+          if grep -q '^APP_IMAGE=' .env; then
+              sed -i "s|^APP_IMAGE=.*|APP_IMAGE=$APP_IMAGE|" .env
+          else
+              printf '\nAPP_IMAGE=%s\n' "$APP_IMAGE" >> .env
+          fi
+          chmod 600 .env
+          docker compose -f compose.prod.yml ps
+          printf 'Deployed commit %s\n' "$revision"
+          REMOTE
